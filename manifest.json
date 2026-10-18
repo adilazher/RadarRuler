@@ -11,9 +11,7 @@
   "host_permissions": [
     "https://www.flightradar24.com/*"
   ],
-  "permissions": [
-    "storage"
-  ],
+  "permissions": [],
   "content_scripts": [
     {
       "matches": ["https://www.flightradar24.com/*"],

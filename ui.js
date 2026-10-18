@@ -40,24 +40,27 @@
   </svg>`;
 
   // ---------------------------------------------------------------------------
-  // Storage helpers
+  // Storage helpers — localStorage is synchronous, always available, and
+  // needs no Chrome sync sign-in. Falls back to DEFAULTS for missing keys.
   // ---------------------------------------------------------------------------
 
+  const STORAGE_KEY = 'fr24m-settings';
+
   function loadSettings(cb) {
-    chrome.storage.sync.get(DEFAULTS, (result) => {
-      currentSettings = {
-        color: result.color,
-        unit: result.unit,
-        lineStyle: result.lineStyle,
-        lineWeight: result.lineWeight
-      };
-      cb(currentSettings);
-    });
+    let stored = {};
+    try { stored = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch {}
+    currentSettings = {
+      color:      stored.color      ?? DEFAULTS.color,
+      unit:       stored.unit       ?? DEFAULTS.unit,
+      lineStyle:  stored.lineStyle  ?? DEFAULTS.lineStyle,
+      lineWeight: stored.lineWeight ?? DEFAULTS.lineWeight
+    };
+    cb(currentSettings);
   }
 
   function saveSettings(patch) {
     currentSettings = { ...currentSettings, ...patch };
-    chrome.storage.sync.set(currentSettings);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(currentSettings)); } catch {}
     sendSettings();
     if (!measuring) sendMessage({ type: 'toggle' });
     updateFlyoutState();
