@@ -104,6 +104,12 @@
     return new google.maps.LatLng((a.lat() + b.lat()) / 2, (a.lng() + b.lng()) / 2);
   }
 
+  function formatBearing(a, b) {
+    const raw = google.maps.geometry.spherical.computeHeading(a, b);
+    const deg = ((raw % 360) + 360) % 360;
+    return `${Math.round(deg).toString().padStart(3, '0')}°`;
+  }
+
   function formatDistance(metres) {
     const { unit } = settings;
     if (unit === 'km') {
@@ -392,7 +398,7 @@
       if (!proj) return;
       const px = proj.fromLatLngToDivPixel(midpoint(this._a, this._b));
       if (!px) return;
-      this._div.textContent = formatDistance(computeDistance(this._a, this._b));
+      this._div.textContent = `${formatDistance(computeDistance(this._a, this._b))} · ${formatBearing(this._a, this._b)}`;
       const w = this._div.offsetWidth;
       const h = this._div.offsetHeight;
       this._div.style.left = `${px.x - w / 2}px`;
