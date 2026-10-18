@@ -39,16 +39,21 @@
   let measureOn = false;
   let prevCursorOptions = null; // { draggableCursor, draggingCursor }
 
-  // Measurement state machine: 'idle' | 'start_set' | 'finished'
+  // Measurement state machine: 'idle' | 'drawing' | 'finished'
   let state = 'idle';
-  let startLatLng = null;
-  let endLatLng = null;        // live while drawing, locked when finished
+  let waypoints = [];          // LatLng[] — committed points
+  let dotOverlays = [];        // one OverlayView dot per waypoint
 
   // Map overlays
   let polyline = null;
-  let markerStart = null;
-  let markerEnd = null;
   let labelOverlay = null;
+
+  // Double-click detection (finish gesture)
+  let lastClickTime = 0;
+  let lastClickX = 0;
+  let lastClickY = 0;
+  const DBLCLICK_MS = 350;
+  const DBLCLICK_PX = 10;
 
   // Pointer tracking for click-vs-drag discrimination
   let pointerDownX = 0;
@@ -258,13 +263,6 @@
     return proj.fromContainerPixelToLatLng(new google.maps.Point(x, y));
   }
 
-  function latLngToPixel(ll) {
-    if (!projectionReady) return null;
-    const proj = overlay.getProjection();
-    if (!proj) return null;
-    return proj.fromLatLngToContainerPixel(ll);
-  }
-
   // ---------------------------------------------------------------------------
   // Rendering
   // ---------------------------------------------------------------------------
@@ -367,12 +365,15 @@
     return lo;
   }
 
-  // Custom OverlayView for the distance label pill
-  function createLabelOverlay(a, b) {
+  // Custom OverlayView for the distance label pill.
+  // _pts: LatLng[] of committed waypoints; _extra: cursor LatLng or null.
+  // Label is anchored to the midpoint of the last segment and shows total
+  // cumulative distance across all segments (including rubber-band to cursor).
+  function createLabelOverlay() {
     const lo = new google.maps.OverlayView();
-    lo._a = a;
-    lo._b = b;
-    lo._div = null;
+    lo._pts   = [];
+    lo._extra = null;
+    lo._div   = null;
 
     lo.onAdd = function () {
       const div = document.createElement('div');
@@ -382,22 +383,25 @@
         'border-radius:6px;pointer-events:none;white-space:nowrap;' +
         'box-shadow:0 1px 4px rgba(0,0,0,0.5);line-height:1.4;';
       this._div = div;
-      // floatPane sits above tiles and lines
       this.getPanes().floatPane.appendChild(div);
     };
 
     lo.draw = function () {
-      if (!this._div || !this._a || !this._b) return;
-      const mid = midpoint(this._a, this._b);
+      if (!this._div) return;
+      const all = this._extra ? [...this._pts, this._extra] : this._pts;
+      if (all.length < 2) return;
+      const last       = all[all.length - 1];
+      const secondLast = all[all.length - 2];
       const proj = this.getProjection();
       if (!proj) return;
-      const px = proj.fromLatLngToDivPixel(mid);
+      const px = proj.fromLatLngToDivPixel(midpoint(secondLast, last));
       if (!px) return;
-      const d = computeDistance(this._a, this._b);
-      let html = formatDistance(d);
-      if (SHOW_BEARING) {
-        const brg = computeBearing(this._a, this._b).toFixed(0);
-        html += `<br><span style="font-size:10px;opacity:0.75">${brg}°</span>`;
+      // Total distance across all segments
+      let total = 0;
+      for (let i = 1; i < all.length; i++) total += computeDistance(all[i - 1], all[i]);
+      let html = formatDistance(total);
+      if (SHOW_BEARING && all.length === 2) {
+        html += `<br><span style="font-size:10px;opacity:0.75">${computeBearing(all[0], all[1]).toFixed(0)}°</span>`;
       }
       this._div.innerHTML = html;
       const w = this._div.offsetWidth;
@@ -410,54 +414,48 @@
       if (this._div) { this._div.remove(); this._div = null; }
     };
 
-    lo.updatePoints = function (a, b) {
-      this._a = a; this._b = b;
+    lo.update = function (pts, extra) {
+      this._pts = pts; this._extra = extra;
       this.draw();
     };
 
-    lo.updateColor = function () {
-      this.draw(); // text is always white; only distance/unit might change
-    };
+    lo.updateColor = function () { this.draw(); };
 
     lo.setMap(capturedMap);
     return lo;
   }
 
-  function updatePolyline(a, b) {
-    if (!polyline) return;
-    polyline.setPath(b ? [a, b] : [a]);
+  // Add a waypoint dot and extend the polyline path.
+  function addWaypoint(ll) {
+    waypoints.push(ll);
+    // First dot is slightly larger (start marker)
+    const dot = createDotOverlay(ll, waypoints.length > 1);
+    dotOverlays.push(dot);
+    if (!polyline) createPolyline();
+    polyline.setPath(waypoints);
+    if (waypoints.length >= 2) {
+      if (!labelOverlay) labelOverlay = createLabelOverlay();
+      labelOverlay.update(waypoints, null);
+    }
   }
 
-  function updateMarkersAndLabel(a, b) {
-    // Start dot
-    if (!markerStart) {
-      markerStart = createDotOverlay(a, false);
-    } else {
-      markerStart.updatePosition(a);
-    }
-    // End dot + label
-    if (b) {
-      if (!markerEnd) {
-        markerEnd = createDotOverlay(b, true);
-      } else {
-        markerEnd.updatePosition(b);
-      }
-      if (!labelOverlay) {
-        labelOverlay = createLabelOverlay(a, b);
-      } else {
-        labelOverlay.updatePoints(a, b);
-      }
+  // Update the rubber-band preview while the cursor moves.
+  function updateRubberBand(cursorLL) {
+    if (!polyline || waypoints.length === 0) return;
+    polyline.setPath([...waypoints, cursorLL]);
+    if (waypoints.length >= 1) {
+      if (!labelOverlay) labelOverlay = createLabelOverlay();
+      labelOverlay.update(waypoints, cursorLL);
     }
   }
 
   function clearMeasurement() {
     if (polyline) { polyline.setMap(null); polyline = null; }
-    if (markerStart) { markerStart.setMap(null); markerStart = null; }
-    if (markerEnd) { markerEnd.setMap(null); markerEnd = null; }
+    dotOverlays.forEach(d => d.setMap(null));
+    dotOverlays = [];
+    waypoints = [];
     if (labelOverlay) { labelOverlay.setMap(null); labelOverlay = null; }
     state = 'idle';
-    startLatLng = null;
-    endLatLng = null;
     pendingLatLng = null;
     rafPending = false;
   }
@@ -487,7 +485,7 @@
   }
 
   function onMouseMoveContainer(e) {
-    if (state !== 'start_set') return;
+    if (state !== 'drawing') return;
     const rect = capturedMap.getDiv().getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
@@ -498,9 +496,8 @@
       rafPending = true;
       requestAnimationFrame(() => {
         rafPending = false;
-        if (!pendingLatLng || !startLatLng) return;
-        updatePolyline(startLatLng, pendingLatLng);
-        updateMarkersAndLabel(startLatLng, pendingLatLng);
+        if (!pendingLatLng || waypoints.length === 0) return;
+        updateRubberBand(pendingLatLng);
       });
     }
   }
@@ -525,18 +522,29 @@
     const ll = pixelToLatLng(x, y);
     if (!ll) return;
 
+    // Double-click detection: second click within time + pixel threshold = finish
+    const now = Date.now();
+    const isDbl = (now - lastClickTime < DBLCLICK_MS) &&
+                  Math.abs(e.clientX - lastClickX) < DBLCLICK_PX &&
+                  Math.abs(e.clientY - lastClickY) < DBLCLICK_PX;
+    lastClickTime = now;
+    lastClickX = e.clientX;
+    lastClickY = e.clientY;
+
     if (state === 'idle' || state === 'finished') {
-      // Start a new measurement, clearing any previous
       clearMeasurement();
-      startLatLng = ll;
-      state = 'start_set';
-      createPolyline();
-      updateMarkersAndLabel(ll, null);
-    } else if (state === 'start_set') {
-      endLatLng = ll;
-      state = 'finished';
-      updatePolyline(startLatLng, endLatLng);
-      updateMarkersAndLabel(startLatLng, endLatLng);
+      addWaypoint(ll);
+      state = 'drawing';
+      showToast('Click to add points · Double-click to finish · Right-click to clear');
+    } else if (state === 'drawing') {
+      if (isDbl && waypoints.length >= 2) {
+        // Finish without adding the double-click point a second time
+        state = 'finished';
+        polyline.setPath(waypoints);
+        if (labelOverlay) labelOverlay.update(waypoints, null);
+      } else {
+        addWaypoint(ll);
+      }
     }
   }
 
@@ -645,8 +653,7 @@
     settings = { ...settings, ...newSettings };
     if (!polyline) return;
     polyline.setOptions(polylineOptions(settings.color, settings.lineStyle, settings.lineWeight));
-    if (markerStart) markerStart.updateColor(settings.color);
-    if (markerEnd)   markerEnd.updateColor(settings.color);
+    dotOverlays.forEach(d => d.updateColor(settings.color));
     if (labelOverlay) labelOverlay.updateColor();
   }
 
