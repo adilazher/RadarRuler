@@ -1,0 +1,681 @@
+/* fr24-measure/main.js
+ * World: MAIN  |  run_at: document_start
+ * Owns all Google Maps interaction: capture, drawing, measurement.
+ * Communicates with ui.js (ISOLATED world) via window.postMessage.
+ */
+
+'use strict';
+
+(function () {
+
+  // Prevent re-initialization on SPA navigations: if this script has already
+  // run in this page context, window.__fr24measure exists — bail out immediately.
+  if (window.__fr24measure) return;
+
+  // ---------------------------------------------------------------------------
+  // Constants / config
+  // ---------------------------------------------------------------------------
+
+  const NS = 'fr24-measure';
+  const SHOW_BEARING = false;          // secondary bearing line in label
+  const CLICK_MOVE_THRESHOLD = 5;      // px — below this = click, else pan
+  const CAPTURE_POLL_MS = 50;
+  const CAPTURE_TIMEOUT_MS = 30_000;
+  const MIN_MAP_SIZE = 200;            // px — ignore tiny embeds / minimaps
+
+  // Haversine fallback (used if google.maps.geometry.spherical is absent)
+  const EARTH_R = 6_371_008.8;
+
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
+
+  let capturedMap = null;
+  let overlay = null;          // OverlayView used for pixel↔LatLng
+  let projectionReady = false;
+
+  let settings = { color: '#facc15', unit: 'nm' };
+
+  let measureOn = false;
+  let prevCursorOptions = null; // { draggableCursor, draggingCursor }
+
+  // Measurement state machine: 'idle' | 'start_set' | 'finished'
+  let state = 'idle';
+  let startLatLng = null;
+  let endLatLng = null;        // live while drawing, locked when finished
+
+  // Map overlays
+  let polyline = null;
+  let markerStart = null;
+  let markerEnd = null;
+  let labelOverlay = null;
+
+  // Pointer tracking for click-vs-drag discrimination
+  let pointerDownX = 0;
+  let pointerDownY = 0;
+  let pointerMoved = false;
+
+  // rAF handle for mousemove throttle
+  let rafPending = false;
+  let pendingLatLng = null;
+
+  // Container-level event listeners (added / removed with measure mode)
+  let boundPointerDown = null;
+  let boundPointerMove = null;
+  let boundPointerUp = null;
+  let boundMouseMove = null;
+  let boundClick = null;
+  let boundKeyDown = null;
+
+  // ---------------------------------------------------------------------------
+  // Utilities
+  // ---------------------------------------------------------------------------
+
+  function haversine(a, b) {
+    const toRad = d => d * Math.PI / 180;
+    const lat1 = toRad(a.lat()), lat2 = toRad(b.lat());
+    const dLat = lat2 - lat1;
+    const dLng = toRad(b.lng() - a.lng());
+    const s = Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    return 2 * EARTH_R * Math.asin(Math.sqrt(s));
+  }
+
+  function computeDistance(a, b) {
+    if (window.google?.maps?.geometry?.spherical) {
+      return google.maps.geometry.spherical.computeDistanceBetween(a, b);
+    }
+    return haversine(a, b);
+  }
+
+  function midpoint(a, b) {
+    if (window.google?.maps?.geometry?.spherical) {
+      return google.maps.geometry.spherical.interpolate(a, b, 0.5);
+    }
+    // Simple average fallback (fine for label placement)
+    return new google.maps.LatLng((a.lat() + b.lat()) / 2, (a.lng() + b.lng()) / 2);
+  }
+
+  function formatDistance(metres) {
+    const { unit } = settings;
+    if (unit === 'km') {
+      return metres < 1000
+        ? `${Math.round(metres)} m`
+        : `${(metres / 1000).toFixed(1)} km`;
+    }
+    if (unit === 'mi') {
+      const mi = metres / 1609.344;
+      return mi < 0.1 ? `${Math.round(metres)} m` : `${mi.toFixed(1)} mi`;
+    }
+    // nm
+    const nm = metres / 1852;
+    return nm < 0.1 ? `${Math.round(metres)} m` : `${nm.toFixed(1)} nm`;
+  }
+
+  function computeBearing(a, b) {
+    const toRad = d => d * Math.PI / 180;
+    const toDeg = r => r * 180 / Math.PI;
+    const dLng = toRad(b.lng() - a.lng());
+    const lat1 = toRad(a.lat()), lat2 = toRad(b.lat());
+    const y = Math.sin(dLng) * Math.cos(lat2);
+    const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+    return (toDeg(Math.atan2(y, x)) + 360) % 360;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Toast (shown when map not yet captured)
+  // ---------------------------------------------------------------------------
+
+  function showToast(msg) {
+    const existing = document.getElementById('fr24m-toast');
+    if (existing) existing.remove();
+    const el = document.createElement('div');
+    el.id = 'fr24m-toast';
+    Object.assign(el.style, {
+      position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)',
+      background: 'rgba(17,24,39,0.95)', color: '#fff', padding: '8px 16px',
+      borderRadius: '8px', fontSize: '13px', zIndex: '999999',
+      pointerEvents: 'none', whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(0,0,0,0.4)'
+    });
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Map capture
+  // ---------------------------------------------------------------------------
+
+  function isMainMap(mapInstance) {
+    try {
+      const div = mapInstance.getDiv();
+      if (!div) return false;
+      const rect = div.getBoundingClientRect();
+      return rect.width >= MIN_MAP_SIZE && rect.height >= MIN_MAP_SIZE;
+    } catch {
+      return false;
+    }
+  }
+
+  let _captureInProgress = false;
+
+  function capture(mapInstance) {
+    if (capturedMap) return;
+    // Re-entrancy guard: isMainMap() calls mapInstance.getDiv(), which is a
+    // wrapped method that re-enters capture() before capturedMap is assigned.
+    // Without this guard the calls recurse until Chrome throws a RangeError,
+    // which isMainMap's try/catch swallows, causing the whole cycle to repeat
+    // on every subsequent wrapped-method call — hence the repeated log lines.
+    if (_captureInProgress) return;
+    _captureInProgress = true;
+    try {
+      if (!isMainMap(mapInstance)) return;
+      capturedMap = mapInstance;
+      console.log('[fr24-measure] map captured');
+      postStatus();
+      initOverlay();
+    } finally {
+      _captureInProgress = false;
+    }
+  }
+
+  function wrapMapPrototype() {
+    const proto = google.maps.Map.prototype;
+    // DOM assumption: these methods are on the standard Maps JS API prototype.
+    const methods = [
+      'getBounds', 'getZoom', 'getCenter', 'getProjection',
+      'setCenter', 'panTo', 'panBy', 'fitBounds', 'setZoom',
+      'getMapTypeId', 'getDiv'
+    ];
+
+    methods.forEach(name => {
+      const orig = proto[name];
+      if (!orig || orig.__fr24wrapped) return;
+      proto[name] = function (...args) {
+        capture(this);
+        return orig.apply(this, args);
+      };
+      proto[name].__fr24wrapped = true;
+    });
+  }
+
+  function wrapMapConstructor() {
+    // Secondary path: subclass constructor so we see new instances too.
+    const Orig = google.maps.Map;
+    if (Orig.__fr24wrapped) return;
+    try {
+      class WrappedMap extends Orig {
+        constructor(...args) {
+          super(...args);
+          capture(this);
+        }
+      }
+      // Copy statics / prototype chain references
+      Object.setPrototypeOf(WrappedMap, Orig);
+      WrappedMap.__fr24wrapped = true;
+      google.maps.Map = WrappedMap;
+    } catch (e) {
+      // Non-fatal: prototype wrapping alone is sufficient
+      console.warn('[fr24-measure] constructor wrap failed:', e);
+    }
+  }
+
+  function startCapture() {
+    const deadline = Date.now() + CAPTURE_TIMEOUT_MS;
+    const timer = setInterval(() => {
+      if (capturedMap) { clearInterval(timer); return; }
+      if (Date.now() > deadline) { clearInterval(timer); return; }
+      if (!window.google?.maps?.Map?.prototype) return;
+      clearInterval(timer);
+      wrapMapPrototype();
+      wrapMapConstructor();
+    }, CAPTURE_POLL_MS);
+  }
+
+  // ---------------------------------------------------------------------------
+  // OverlayView for pixel↔LatLng projection
+  // ---------------------------------------------------------------------------
+
+  function initOverlay() {
+    if (overlay || !capturedMap) return;
+    // DOM assumption: google.maps.OverlayView is available when map is captured.
+    overlay = new google.maps.OverlayView();
+    overlay.onAdd = function () {
+      projectionReady = true;
+    };
+    overlay.draw = function () { };
+    overlay.onRemove = function () {
+      projectionReady = false;
+    };
+    overlay.setMap(capturedMap);
+  }
+
+  function pixelToLatLng(x, y) {
+    if (!projectionReady) return null;
+    const proj = overlay.getProjection();
+    if (!proj) return null;
+    return proj.fromContainerPixelToLatLng(new google.maps.Point(x, y));
+  }
+
+  function latLngToPixel(ll) {
+    if (!projectionReady) return null;
+    const proj = overlay.getProjection();
+    if (!proj) return null;
+    return proj.fromLatLngToContainerPixel(ll);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------------------
+
+  // Returns the polyline options object for the given color + lineStyle.
+  // Dashed/dotted lines work by setting strokeOpacity:0 and using the icons
+  // array — the only way Google Maps supports non-solid polyline patterns.
+  function polylineOptions(color, lineStyle, lineWeight) {
+    const w = lineWeight ?? 3;
+    const base = {
+      geodesic: true,
+      strokeColor: color,
+      strokeWeight: w,
+      clickable: false,
+      zIndex: 9999
+    };
+    if (lineStyle === 'dashed') {
+      return {
+        ...base,
+        strokeOpacity: 0,
+        icons: [{
+          icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: color, scale: Math.max(2, w * 1.2) },
+          offset: '0',
+          repeat: `${12 + w * 2}px`
+        }]
+      };
+    }
+    if (lineStyle === 'dotted') {
+      return {
+        ...base,
+        strokeOpacity: 0,
+        icons: [{
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            fillOpacity: 1,
+            fillColor: color,
+            strokeOpacity: 0,
+            scale: Math.max(2, w * 0.9)
+          },
+          offset: '0',
+          repeat: `${6 + w * 2}px`
+        }]
+      };
+    }
+    // solid
+    return { ...base, strokeOpacity: 0.95, icons: [] };
+  }
+
+  function createPolyline() {
+    polyline = new google.maps.Polyline({
+      map: capturedMap,
+      ...polylineOptions(settings.color, settings.lineStyle, settings.lineWeight)
+    });
+  }
+
+  // Dot overlay — replaces google.maps.Marker to avoid the deprecation warning.
+  // AdvancedMarkerElement requires a mapId on the Map, which FR24 doesn't set,
+  // so we use a plain OverlayView + styled div instead.
+  function createDotOverlay(ll, isEnd) {
+    const lo = new google.maps.OverlayView();
+    lo._ll = ll;
+    lo._div = null;
+    const diameter = isEnd ? 10 : 12;
+
+    lo.onAdd = function () {
+      const div = document.createElement('div');
+      div.style.cssText =
+        `position:absolute;width:${diameter}px;height:${diameter}px;` +
+        `border-radius:50%;background:${settings.color};` +
+        `border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.5);` +
+        `transform:translate(-50%,-50%);pointer-events:none;z-index:10000;`;
+      this._div = div;
+      this.getPanes().overlayLayer.appendChild(div);
+    };
+
+    lo.draw = function () {
+      if (!this._div) return;
+      const proj = this.getProjection();
+      if (!proj) return;
+      const pt = proj.fromLatLngToDivPixel(this._ll);
+      if (!pt) return;
+      this._div.style.left = `${pt.x}px`;
+      this._div.style.top  = `${pt.y}px`;
+    };
+
+    lo.onRemove = function () {
+      if (this._div) { this._div.remove(); this._div = null; }
+    };
+
+    lo.updatePosition = function (ll) {
+      this._ll = ll;
+      this.draw();
+    };
+
+    lo.updateColor = function (color) {
+      if (this._div) this._div.style.background = color;
+    };
+
+    lo.setMap(capturedMap);
+    return lo;
+  }
+
+  // Custom OverlayView for the distance label pill
+  function createLabelOverlay(a, b) {
+    const lo = new google.maps.OverlayView();
+    lo._a = a;
+    lo._b = b;
+    lo._div = null;
+
+    lo.onAdd = function () {
+      const div = document.createElement('div');
+      div.style.cssText =
+        'position:absolute;background:rgba(17,24,39,0.90);color:#fff;' +
+        'font-size:12px;font-family:sans-serif;padding:3px 8px;' +
+        'border-radius:6px;pointer-events:none;white-space:nowrap;' +
+        'box-shadow:0 1px 4px rgba(0,0,0,0.5);line-height:1.4;';
+      this._div = div;
+      // floatPane sits above tiles and lines
+      this.getPanes().floatPane.appendChild(div);
+    };
+
+    lo.draw = function () {
+      if (!this._div || !this._a || !this._b) return;
+      const mid = midpoint(this._a, this._b);
+      const proj = this.getProjection();
+      if (!proj) return;
+      const px = proj.fromLatLngToDivPixel(mid);
+      if (!px) return;
+      const d = computeDistance(this._a, this._b);
+      let html = formatDistance(d);
+      if (SHOW_BEARING) {
+        const brg = computeBearing(this._a, this._b).toFixed(0);
+        html += `<br><span style="font-size:10px;opacity:0.75">${brg}°</span>`;
+      }
+      this._div.innerHTML = html;
+      const w = this._div.offsetWidth;
+      const h = this._div.offsetHeight;
+      this._div.style.left = `${px.x - w / 2}px`;
+      this._div.style.top  = `${px.y - h / 2 - 18}px`;
+    };
+
+    lo.onRemove = function () {
+      if (this._div) { this._div.remove(); this._div = null; }
+    };
+
+    lo.updatePoints = function (a, b) {
+      this._a = a; this._b = b;
+      this.draw();
+    };
+
+    lo.updateColor = function () {
+      this.draw(); // text is always white; only distance/unit might change
+    };
+
+    lo.setMap(capturedMap);
+    return lo;
+  }
+
+  function updatePolyline(a, b) {
+    if (!polyline) return;
+    polyline.setPath(b ? [a, b] : [a]);
+  }
+
+  function updateMarkersAndLabel(a, b) {
+    // Start dot
+    if (!markerStart) {
+      markerStart = createDotOverlay(a, false);
+    } else {
+      markerStart.updatePosition(a);
+    }
+    // End dot + label
+    if (b) {
+      if (!markerEnd) {
+        markerEnd = createDotOverlay(b, true);
+      } else {
+        markerEnd.updatePosition(b);
+      }
+      if (!labelOverlay) {
+        labelOverlay = createLabelOverlay(a, b);
+      } else {
+        labelOverlay.updatePoints(a, b);
+      }
+    }
+  }
+
+  function clearMeasurement() {
+    if (polyline) { polyline.setMap(null); polyline = null; }
+    if (markerStart) { markerStart.setMap(null); markerStart = null; }
+    if (markerEnd) { markerEnd.setMap(null); markerEnd = null; }
+    if (labelOverlay) { labelOverlay.setMap(null); labelOverlay = null; }
+    state = 'idle';
+    startLatLng = null;
+    endLatLng = null;
+    pendingLatLng = null;
+    rafPending = false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Event handlers
+  // ---------------------------------------------------------------------------
+
+  function onPointerDown(e) {
+    pointerDownX = e.clientX;
+    pointerDownY = e.clientY;
+    pointerMoved = false;
+    // Do NOT stopPropagation — Google Maps must receive this for panning
+  }
+
+  function onPointerMoveContainer(e) {
+    const dx = e.clientX - pointerDownX;
+    const dy = e.clientY - pointerDownY;
+    if (Math.abs(dx) > CLICK_MOVE_THRESHOLD || Math.abs(dy) > CLICK_MOVE_THRESHOLD) {
+      pointerMoved = true;
+    }
+    // Do NOT stopPropagation — Google Maps must receive this for panning
+  }
+
+  function onPointerUp() {
+    // Nothing here; we use the click event to register points
+  }
+
+  function onMouseMoveContainer(e) {
+    if (state !== 'start_set') return;
+    const rect = capturedMap.getDiv().getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const ll = pixelToLatLng(x, y);
+    if (!ll) return;
+    pendingLatLng = ll;
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(() => {
+        rafPending = false;
+        if (!pendingLatLng || !startLatLng) return;
+        updatePolyline(startLatLng, pendingLatLng);
+        updateMarkersAndLabel(startLatLng, pendingLatLng);
+      });
+    }
+  }
+
+  // This is the most fragile part: we suppress FR24's own click handling
+  // (aircraft selection, popups) while measuring by calling
+  // stopImmediatePropagation + preventDefault during capture phase.
+  // FR24 may bind its click listeners via Google Maps event system
+  // (google.maps.event.addListener) or directly on the container div.
+  // If aircraft selection still triggers, the FR24 listener fires before
+  // this capture handler — try changing 'click' to 'mousedown' capture here.
+  function onClickCapture(e) {
+    if (!measureOn) return;
+    if (pointerMoved) return; // was a drag/pan — do not intercept
+
+    e.stopImmediatePropagation();
+    e.preventDefault();
+
+    const rect = capturedMap.getDiv().getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const ll = pixelToLatLng(x, y);
+    if (!ll) return;
+
+    if (state === 'idle' || state === 'finished') {
+      // Start a new measurement, clearing any previous
+      clearMeasurement();
+      startLatLng = ll;
+      state = 'start_set';
+      createPolyline();
+      updateMarkersAndLabel(ll, null);
+    } else if (state === 'start_set') {
+      endLatLng = ll;
+      state = 'finished';
+      updatePolyline(startLatLng, endLatLng);
+      updateMarkersAndLabel(startLatLng, endLatLng);
+    }
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Escape' && measureOn) {
+      clearMeasurement();
+      // Keep measure mode on after Esc — user can continue measuring
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Measure mode on/off
+  // ---------------------------------------------------------------------------
+
+  function attachListeners() {
+    const div = capturedMap.getDiv();
+
+    boundPointerDown = onPointerDown.bind(null);
+    boundPointerMove = onPointerMoveContainer.bind(null);
+    boundPointerUp   = onPointerUp.bind(null);
+    boundMouseMove   = onMouseMoveContainer.bind(null);
+    boundClick       = onClickCapture.bind(null);
+    boundKeyDown     = onKeyDown.bind(null);
+
+    div.addEventListener('pointerdown',  boundPointerDown,  { capture: false });
+    div.addEventListener('pointermove',  boundPointerMove,  { capture: false });
+    div.addEventListener('pointerup',    boundPointerUp,    { capture: false });
+    div.addEventListener('mousemove',    boundMouseMove,    { capture: false });
+    // capture: true so we intercept before Google Maps / FR24 handlers
+    div.addEventListener('click',        boundClick,        { capture: true  });
+    document.addEventListener('keydown', boundKeyDown,      { capture: false });
+  }
+
+  function detachListeners() {
+    if (!capturedMap) return;
+    const div = capturedMap.getDiv();
+    if (boundPointerDown) div.removeEventListener('pointerdown', boundPointerDown, { capture: false });
+    if (boundPointerMove) div.removeEventListener('pointermove', boundPointerMove, { capture: false });
+    if (boundPointerUp)   div.removeEventListener('pointerup',   boundPointerUp,   { capture: false });
+    if (boundMouseMove)   div.removeEventListener('mousemove',   boundMouseMove,   { capture: false });
+    if (boundClick)       div.removeEventListener('click',       boundClick,       { capture: true  });
+    if (boundKeyDown)     document.removeEventListener('keydown', boundKeyDown,    { capture: false });
+    boundPointerDown = boundPointerMove = boundPointerUp =
+      boundMouseMove = boundClick = boundKeyDown = null;
+  }
+
+  function enableMeasure() {
+    if (!capturedMap) {
+      showToast('Map not detected yet — pan or zoom the map once');
+      return;
+    }
+    measureOn = true;
+    // Save and override cursor styles
+    prevCursorOptions = {
+      draggableCursor:  capturedMap.get('draggableCursor')  ?? '',
+      draggingCursor:   capturedMap.get('draggingCursor')   ?? ''
+    };
+    capturedMap.setOptions({ draggableCursor: 'crosshair', draggingCursor: 'grabbing' });
+    attachListeners();
+    postStatus();
+  }
+
+  function disableMeasure() {
+    measureOn = false;
+    clearMeasurement();
+    detachListeners();
+    if (capturedMap && prevCursorOptions) {
+      capturedMap.setOptions(prevCursorOptions);
+      prevCursorOptions = null;
+    }
+    postStatus();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Settings application
+  // ---------------------------------------------------------------------------
+
+  function applySettings(newSettings) {
+    settings = { ...settings, ...newSettings };
+    if (!polyline) return;
+    polyline.setOptions(polylineOptions(settings.color, settings.lineStyle, settings.lineWeight));
+    if (markerStart) markerStart.updateColor(settings.color);
+    if (markerEnd)   markerEnd.updateColor(settings.color);
+    if (labelOverlay) labelOverlay.updateColor();
+  }
+
+  // ---------------------------------------------------------------------------
+  // postMessage bridge
+  // ---------------------------------------------------------------------------
+
+  function postStatus() {
+    window.postMessage({
+      source: NS,
+      type: 'status',
+      mapCaptured: !!capturedMap,
+      measuring: measureOn
+    }, '*');
+  }
+
+  window.addEventListener('message', (e) => {
+    if (e.source !== window) return;
+    const msg = e.data;
+    if (!msg || msg.source !== NS) return;
+
+    if (msg.type === 'toggle') {
+      if (measureOn) disableMeasure(); else enableMeasure();
+    } else if (msg.type === 'settings') {
+      applySettings(msg.settings);
+    } else if (msg.type === 'ready') {
+      // ui.js just loaded — send it our current status and request settings
+      postStatus();
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Debug API
+  // ---------------------------------------------------------------------------
+
+  window.__fr24measure = {
+    getMap() { return capturedMap; },
+    debug() {
+      console.group('[fr24-measure] debug');
+      console.log('map captured:', !!capturedMap);
+      if (capturedMap) {
+        try { console.log('zoom:', capturedMap.getZoom()); } catch (e) { console.log('zoom error', e); }
+        try { console.log('center:', capturedMap.getCenter()?.toString()); } catch (e) { console.log('center error', e); }
+        try { console.log('container:', capturedMap.getDiv()); } catch (e) { console.log('container error', e); }
+      }
+      console.log('geometry.spherical available:', !!window.google?.maps?.geometry?.spherical);
+      console.log('projection ready:', projectionReady);
+      console.log('measure on:', measureOn);
+      console.log('state:', state);
+      console.groupEnd();
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Boot
+  // ---------------------------------------------------------------------------
+
+  startCapture();
+
+})();
