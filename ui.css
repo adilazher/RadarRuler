@@ -138,9 +138,9 @@
   border-color: #facc15;
 }
 
-/* ── Thickness slider row ─────────────────────────────────────────────────── */
+/* ── Thickness stepper row ────────────────────────────────────────────────── */
 .fr24m-thick-row {
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
 
@@ -149,67 +149,43 @@
   color: rgba(255, 255, 255, 0.55);
   white-space: nowrap;
   flex-shrink: 0;
+  flex: 1;
 }
 
 .fr24m-thick-val {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.8);
-  min-width: 10px;
-  text-align: right;
+  color: #fff;
+  min-width: 14px;
+  text-align: center;
   flex-shrink: 0;
 }
 
-#fr24m-weight-slider {
-  flex: 1;
-  -webkit-appearance: none;
-  appearance: none;
-  /* Height must equal thumb height so the flex row allocates the right space
-     and the thumb doesn't overflow an undersized element box. */
-  height: 14px;
-  background: transparent;
-  outline: none;
+.fr24m-step-btn {
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
-  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
 }
 
-/* Track is 4 px tall; Chrome centres it within the 14 px input element.
-   margin-top on the thumb then offsets it back onto the track centre. */
-#fr24m-weight-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 2px;
+.fr24m-step-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
 }
 
-#fr24m-weight-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  background: #facc15;
-  border: 2px solid #fff;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  /* Track top = (14 - 4) / 2 = 5 px from input top.
-     Pull thumb up by 5 px so its centre sits on the track centre. */
-  margin-top: -5px;
-}
-
-#fr24m-weight-slider::-moz-range-track {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 2px;
-}
-
-#fr24m-weight-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  background: #facc15;
-  border: 2px solid #fff;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+.fr24m-step-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 /* ── Toast (generated in main.js but uses a shared style) ─────────────────── */

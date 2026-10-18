@@ -221,7 +221,7 @@
       styleRow.appendChild(btn);
     });
 
-    // Thickness row
+    // Thickness row — stepper control (no slider CSS headaches)
     const thickRow = document.createElement('div');
     thickRow.className = 'fr24m-row fr24m-thick-row';
 
@@ -229,24 +229,39 @@
     thickLabel.className = 'fr24m-thick-label';
     thickLabel.textContent = 'Width';
 
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.id = 'fr24m-weight-slider';
-    slider.min = '1';
-    slider.max = '8';
-    slider.step = '1';
-    slider.value = String(currentSettings.lineWeight);
-    slider.addEventListener('input', (e) => saveSettings({ lineWeight: Number(e.target.value) }));
+    const btnMinus = document.createElement('button');
+    btnMinus.className = 'fr24m-step-btn';
+    btnMinus.textContent = '−';
+    btnMinus.setAttribute('aria-label', 'Decrease width');
 
     const thickVal = document.createElement('span');
     thickVal.id = 'fr24m-weight-val';
     thickVal.className = 'fr24m-thick-val';
     thickVal.textContent = String(currentSettings.lineWeight);
-    slider.addEventListener('input', (e) => { thickVal.textContent = e.target.value; });
+
+    const btnPlus = document.createElement('button');
+    btnPlus.className = 'fr24m-step-btn';
+    btnPlus.textContent = '+';
+    btnPlus.setAttribute('aria-label', 'Increase width');
+
+    function updateWeight(delta) {
+      const next = Math.min(8, Math.max(1, currentSettings.lineWeight + delta));
+      if (next === currentSettings.lineWeight) return;
+      thickVal.textContent = String(next);
+      btnMinus.disabled = next <= 1;
+      btnPlus.disabled  = next >= 8;
+      saveSettings({ lineWeight: next });
+    }
+
+    btnMinus.addEventListener('click', () => updateWeight(-1));
+    btnPlus.addEventListener('click',  () => updateWeight(+1));
+    btnMinus.disabled = currentSettings.lineWeight <= 1;
+    btnPlus.disabled  = currentSettings.lineWeight >= 8;
 
     thickRow.appendChild(thickLabel);
-    thickRow.appendChild(slider);
+    thickRow.appendChild(btnMinus);
     thickRow.appendChild(thickVal);
+    thickRow.appendChild(btnPlus);
 
     flyout.appendChild(colorRow);
     flyout.appendChild(unitRow);
@@ -321,11 +336,13 @@
       el.classList.toggle('fr24m-active', el.dataset.lineStyle === currentSettings.lineStyle);
     });
 
-    // Sync thickness slider
-    const slider = flyoutEl.querySelector('#fr24m-weight-slider');
-    if (slider) slider.value = String(currentSettings.lineWeight);
+    // Sync thickness stepper
     const val = flyoutEl.querySelector('#fr24m-weight-val');
     if (val) val.textContent = String(currentSettings.lineWeight);
+    flyoutEl.querySelectorAll('.fr24m-step-btn').forEach((btn) => {
+      if (btn.textContent === '−') btn.disabled = currentSettings.lineWeight <= 1;
+      if (btn.textContent === '+') btn.disabled = currentSettings.lineWeight >= 8;
+    });
   }
 
   // ---------------------------------------------------------------------------
