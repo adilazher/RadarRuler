@@ -32,8 +32,12 @@
   // Ruler SVG icon (inline, fill:currentColor)
   // ---------------------------------------------------------------------------
 
-  const RULER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="fill-current size-6" aria-hidden="true">
-    <path d="M21.71 3.29a1 1 0 0 0-1.42 0l-2 2-.29-.3a1 1 0 0 0-1.42 1.42l.3.29-.71.71-.29-.3a1 1 0 1 0-1.42 1.42l.3.29-.71.71-.29-.3a1 1 0 1 0-1.42 1.42l.3.29-.71.71-.29-.3a1 1 0 1 0-1.42 1.42l.3.29-2 2a1 1 0 0 0 0 1.42l2 2a1 1 0 0 0 1.42 0l10-10a1 1 0 0 0 0-1.42l-1-1ZM11 18.59l-1-1 9.29-9.3.3.29Z"/>
+  const RULER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="size-6" aria-hidden="true">
+    <circle cx="12" cy="12" r="7"/>
+    <line x1="12" y1="2" x2="12" y2="6"/>
+    <line x1="12" y1="18" x2="12" y2="22"/>
+    <line x1="2"  y1="12" x2="6"  y2="12"/>
+    <line x1="18" y1="12" x2="22" y2="12"/>
   </svg>`;
 
   // ---------------------------------------------------------------------------
