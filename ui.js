@@ -173,18 +173,6 @@
       colorRow.appendChild(swatch);
     });
 
-    // Custom colour picker
-    const customWrap = document.createElement('label');
-    customWrap.className = 'fr24m-swatch fr24m-custom-wrap';
-    customWrap.title = 'Custom colour';
-    const customInput = document.createElement('input');
-    customInput.type = 'color';
-    customInput.id = 'fr24m-color-input';
-    customInput.addEventListener('input', (e) => saveSettings({ color: e.target.value }));
-    // "+" label inside the swatch
-    customWrap.textContent = '+';
-    customWrap.appendChild(customInput);
-    colorRow.appendChild(customWrap);
 
     // Unit row
     const unitRow = document.createElement('div');
@@ -270,10 +258,30 @@
     thickRow.appendChild(thickVal);
     thickRow.appendChild(btnPlus);
 
+    // Divider
+    const divider = document.createElement('div');
+    divider.className = 'fr24m-divider';
+
+    // Help list
+    const help = document.createElement('ul');
+    help.className = 'fr24m-help';
+    [
+      ['Right-click', 'enable / disable'],
+      ['Click',       'place waypoint'],
+      ['Dbl-click',   'finish segment'],
+      ['Right-click', 'clear line (while drawing)'],
+    ].forEach(([key, desc]) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="fr24m-help-key">${key}</span>${desc}`;
+      help.appendChild(li);
+    });
+
     flyout.appendChild(colorRow);
     flyout.appendChild(unitRow);
     flyout.appendChild(styleRow);
     flyout.appendChild(thickRow);
+    flyout.appendChild(divider);
+    flyout.appendChild(help);
     return flyout;
   }
 
@@ -328,10 +336,6 @@
       const active = el.dataset.color.toLowerCase() === currentSettings.color.toLowerCase();
       el.classList.toggle('fr24m-active', active);
     });
-
-    // Update custom colour input value
-    const ci = flyoutEl.querySelector('#fr24m-color-input');
-    if (ci) ci.value = currentSettings.color;
 
     // Highlight active unit segment
     flyoutEl.querySelectorAll('.fr24m-unit-seg').forEach((el) => {

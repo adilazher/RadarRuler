@@ -56,27 +56,6 @@
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
 }
 
-/* Custom colour swatch wraps a hidden <input type=color> */
-.fr24m-custom-wrap {
-  background: linear-gradient(135deg, #f97316, #22d3ee, #facc15, #ef4444);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: bold;
-  color: rgba(0,0,0,0.6);
-  cursor: pointer;
-}
-
-.fr24m-custom-wrap input[type="color"] {
-  position: absolute;
-  opacity: 0;
-  width: 100%;
-  height: 100%;
-  cursor: pointer;
-  border: none;
-  padding: 0;
-}
 
 /* ── Unit segmented control ───────────────────────────────────────────────── */
 .fr24m-unit-seg {
@@ -186,6 +165,44 @@
 .fr24m-step-btn:disabled {
   opacity: 0.3;
   cursor: default;
+}
+
+/* ── Divider ──────────────────────────────────────────────────────────────── */
+.fr24m-divider {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 2px 0;
+}
+
+/* ── Help list ────────────────────────────────────────────────────────────── */
+.fr24m-help {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fr24m-help li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.3;
+}
+
+.fr24m-help-key {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ── Toast (generated in main.js but uses a shared style) ─────────────────── */
