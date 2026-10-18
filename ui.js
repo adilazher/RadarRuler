@@ -56,6 +56,7 @@
     currentSettings = { ...currentSettings, ...patch };
     chrome.storage.sync.set(currentSettings);
     sendSettings();
+    if (!measuring) sendMessage({ type: 'toggle' });
     updateFlyoutState();
   }
 
