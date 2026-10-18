@@ -594,18 +594,31 @@
       boundMouseMove = boundClick = boundContextMenu = boundKeyDown = null;
   }
 
+  // Inject a <style> tag that forces crosshair on every element inside the
+  // map container while measure mode is on. setOptions({draggableCursor})
+  // only affects the base canvas; aircraft markers and FR24 overlays set
+  // their own inline cursor styles which win without !important.
+  function injectCursorStyle() {
+    if (document.getElementById('fr24m-cursor-style')) return;
+    const s = document.createElement('style');
+    s.id = 'fr24m-cursor-style';
+    s.textContent = '.fr24m-measuring, .fr24m-measuring * { cursor: crosshair !important; }';
+    document.head.appendChild(s);
+  }
+
   function enableMeasure() {
     if (!capturedMap) {
       showToast('Map not detected yet — pan or zoom the map once');
       return;
     }
     measureOn = true;
-    // Save and override cursor styles
     prevCursorOptions = {
-      draggableCursor:  capturedMap.get('draggableCursor')  ?? '',
-      draggingCursor:   capturedMap.get('draggingCursor')   ?? ''
+      draggableCursor: capturedMap.get('draggableCursor') ?? '',
+      draggingCursor:  capturedMap.get('draggingCursor')  ?? ''
     };
     capturedMap.setOptions({ draggableCursor: 'crosshair', draggingCursor: 'grabbing' });
+    injectCursorStyle();
+    capturedMap.getDiv().classList.add('fr24m-measuring');
     attachListeners();
     postStatus();
   }
@@ -614,9 +627,12 @@
     measureOn = false;
     clearMeasurement();
     detachListeners();
-    if (capturedMap && prevCursorOptions) {
-      capturedMap.setOptions(prevCursorOptions);
-      prevCursorOptions = null;
+    if (capturedMap) {
+      capturedMap.getDiv().classList.remove('fr24m-measuring');
+      if (prevCursorOptions) {
+        capturedMap.setOptions(prevCursorOptions);
+        prevCursorOptions = null;
+      }
     }
     postStatus();
   }
