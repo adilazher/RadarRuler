@@ -165,10 +165,18 @@
   -webkit-appearance: none;
   appearance: none;
   height: 4px;
-  background: rgba(255, 255, 255, 0.15);
+  background: transparent;
   border-radius: 2px;
   outline: none;
   cursor: pointer;
+}
+
+/* Explicit track rule required in Chrome; without it the thumb sits above
+   the track instead of being centred on it. */
+#fr24m-weight-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
 }
 
 #fr24m-weight-slider::-webkit-slider-thumb {
@@ -176,17 +184,24 @@
   appearance: none;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 3px;           /* square */
   background: #facc15;
   border: 2px solid #fff;
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  margin-top: -5px;             /* centre on 4px track: -(14-4)/2 */
+}
+
+#fr24m-weight-slider::-moz-range-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
 }
 
 #fr24m-weight-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 3px;           /* square */
   background: #facc15;
   border: 2px solid #fff;
   cursor: pointer;
