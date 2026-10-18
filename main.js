@@ -66,6 +66,7 @@
   let boundMouseMove = null;
   let boundClick = null;
   let boundKeyDown = null;
+  let boundContextMenu = null;
 
   // ---------------------------------------------------------------------------
   // Utilities
@@ -546,6 +547,14 @@
     }
   }
 
+  function onContextMenu(e) {
+    if (!measureOn) return;
+    if (state === 'idle') return; // nothing drawn yet — let the normal context menu through
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    clearMeasurement();
+  }
+
   // ---------------------------------------------------------------------------
   // Measure mode on/off
   // ---------------------------------------------------------------------------
@@ -553,20 +562,22 @@
   function attachListeners() {
     const div = capturedMap.getDiv();
 
-    boundPointerDown = onPointerDown.bind(null);
-    boundPointerMove = onPointerMoveContainer.bind(null);
-    boundPointerUp   = onPointerUp.bind(null);
-    boundMouseMove   = onMouseMoveContainer.bind(null);
-    boundClick       = onClickCapture.bind(null);
-    boundKeyDown     = onKeyDown.bind(null);
+    boundPointerDown  = onPointerDown.bind(null);
+    boundPointerMove  = onPointerMoveContainer.bind(null);
+    boundPointerUp    = onPointerUp.bind(null);
+    boundMouseMove    = onMouseMoveContainer.bind(null);
+    boundClick        = onClickCapture.bind(null);
+    boundKeyDown      = onKeyDown.bind(null);
+    boundContextMenu  = onContextMenu.bind(null);
 
-    div.addEventListener('pointerdown',  boundPointerDown,  { capture: false });
-    div.addEventListener('pointermove',  boundPointerMove,  { capture: false });
-    div.addEventListener('pointerup',    boundPointerUp,    { capture: false });
-    div.addEventListener('mousemove',    boundMouseMove,    { capture: false });
+    div.addEventListener('pointerdown',   boundPointerDown,  { capture: false });
+    div.addEventListener('pointermove',   boundPointerMove,  { capture: false });
+    div.addEventListener('pointerup',     boundPointerUp,    { capture: false });
+    div.addEventListener('mousemove',     boundMouseMove,    { capture: false });
     // capture: true so we intercept before Google Maps / FR24 handlers
-    div.addEventListener('click',        boundClick,        { capture: true  });
-    document.addEventListener('keydown', boundKeyDown,      { capture: false });
+    div.addEventListener('click',         boundClick,        { capture: true  });
+    div.addEventListener('contextmenu',   boundContextMenu,  { capture: true  });
+    document.addEventListener('keydown',  boundKeyDown,      { capture: false });
   }
 
   function detachListeners() {
@@ -577,9 +588,10 @@
     if (boundPointerUp)   div.removeEventListener('pointerup',   boundPointerUp,   { capture: false });
     if (boundMouseMove)   div.removeEventListener('mousemove',   boundMouseMove,   { capture: false });
     if (boundClick)       div.removeEventListener('click',       boundClick,       { capture: true  });
+    if (boundContextMenu) div.removeEventListener('contextmenu', boundContextMenu, { capture: true  });
     if (boundKeyDown)     document.removeEventListener('keydown', boundKeyDown,    { capture: false });
     boundPointerDown = boundPointerMove = boundPointerUp =
-      boundMouseMove = boundClick = boundKeyDown = null;
+      boundMouseMove = boundClick = boundContextMenu = boundKeyDown = null;
   }
 
   function enableMeasure() {
