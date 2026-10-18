@@ -180,6 +180,9 @@
       if (!isMainMap(mapInstance)) return;
       capturedMap = mapInstance;
       console.log('[fr24-measure] map captured');
+      // Attach the right-click toggle listener once for the lifetime of this map instance.
+      boundContextMenu = onContextMenu.bind(null);
+      capturedMap.getDiv().addEventListener('contextmenu', boundContextMenu, { capture: true });
       postStatus();
       initOverlay();
     } finally {
@@ -609,11 +612,15 @@
   }
 
   function onContextMenu(e) {
-    if (!measureOn) return;
-    if (state === 'idle') return; // nothing drawn yet — let the normal context menu through
     e.stopImmediatePropagation();
     e.preventDefault();
-    clearMeasurement();
+    if (!measureOn) {
+      enableMeasure();
+    } else if (state === 'idle') {
+      disableMeasure();
+    } else {
+      clearMeasurement();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -629,7 +636,6 @@
     boundMouseMove    = onMouseMoveContainer.bind(null);
     boundClick        = onClickCapture.bind(null);
     boundKeyDown      = onKeyDown.bind(null);
-    boundContextMenu  = onContextMenu.bind(null);
 
     div.addEventListener('pointerdown',   boundPointerDown,  { capture: false });
     div.addEventListener('pointermove',   boundPointerMove,  { capture: false });
@@ -637,7 +643,6 @@
     div.addEventListener('mousemove',     boundMouseMove,    { capture: false });
     // capture: true so we intercept before Google Maps / FR24 handlers
     div.addEventListener('click',         boundClick,        { capture: true  });
-    div.addEventListener('contextmenu',   boundContextMenu,  { capture: true  });
     document.addEventListener('keydown',  boundKeyDown,      { capture: false });
   }
 
@@ -649,10 +654,9 @@
     if (boundPointerUp)   div.removeEventListener('pointerup',   boundPointerUp,   { capture: false });
     if (boundMouseMove)   div.removeEventListener('mousemove',   boundMouseMove,   { capture: false });
     if (boundClick)       div.removeEventListener('click',       boundClick,       { capture: true  });
-    if (boundContextMenu) div.removeEventListener('contextmenu', boundContextMenu, { capture: true  });
     if (boundKeyDown)     document.removeEventListener('keydown', boundKeyDown,    { capture: false });
     boundPointerDown = boundPointerMove = boundPointerUp =
-      boundMouseMove = boundClick = boundContextMenu = boundKeyDown = null;
+      boundMouseMove = boundClick = boundKeyDown = null;
   }
 
   // Inject a <style> tag that forces crosshair on every element inside the
