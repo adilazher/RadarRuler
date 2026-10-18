@@ -46,7 +46,9 @@
 
   // Map overlays
   let polyline = null;
-  let labelOverlay = null;
+  let labelOverlay = null;      // total-distance pill (shown when ≥ 3 waypoints)
+  let segLabelOverlays = [];    // one pill per completed segment
+  let rubberSegLabel = null;    // reused pill for the live rubber-band segment
 
   // Double-click detection (finish gesture)
   let lastClickTime = 0;
@@ -365,6 +367,46 @@
     return lo;
   }
 
+  // Small per-segment distance pill, positioned at the segment midpoint.
+  function createSegLabelOverlay(a, b) {
+    const lo = new google.maps.OverlayView();
+    lo._a = a; lo._b = b; lo._div = null;
+
+    lo.onAdd = function () {
+      const div = document.createElement('div');
+      div.style.cssText =
+        'position:absolute;background:rgba(17,24,39,0.75);color:rgba(255,255,255,0.9);' +
+        'font-size:11px;font-family:sans-serif;padding:2px 6px;' +
+        'border-radius:5px;pointer-events:none;white-space:nowrap;' +
+        'box-shadow:0 1px 3px rgba(0,0,0,0.4);line-height:1.4;';
+      this._div = div;
+      this.getPanes().floatPane.appendChild(div);
+    };
+
+    lo.draw = function () {
+      if (!this._div || !this._a || !this._b) return;
+      const proj = this.getProjection();
+      if (!proj) return;
+      const px = proj.fromLatLngToDivPixel(midpoint(this._a, this._b));
+      if (!px) return;
+      this._div.textContent = formatDistance(computeDistance(this._a, this._b));
+      const w = this._div.offsetWidth;
+      const h = this._div.offsetHeight;
+      this._div.style.left = `${px.x - w / 2}px`;
+      this._div.style.top  = `${px.y - h / 2 - 14}px`;
+    };
+
+    lo.onRemove = function () {
+      if (this._div) { this._div.remove(); this._div = null; }
+    };
+
+    lo.update = function (a, b) { this._a = a; this._b = b; this.draw(); };
+    lo.updateColor = function () { this.draw(); };
+
+    lo.setMap(capturedMap);
+    return lo;
+  }
+
   // Custom OverlayView for the distance label pill.
   // _pts: LatLng[] of committed waypoints; _extra: cursor LatLng or null.
   // Label is anchored to the midpoint of the last segment and shows total
@@ -389,25 +431,21 @@
     lo.draw = function () {
       if (!this._div) return;
       const all = this._extra ? [...this._pts, this._extra] : this._pts;
-      if (all.length < 2) return;
-      const last       = all[all.length - 1];
-      const secondLast = all[all.length - 2];
+      // Only show total when there are 2+ segments (3+ points);
+      // for a single segment the per-segment label already covers it.
+      if (all.length < 3) { this._div.style.display = 'none'; return; }
+      this._div.style.display = '';
       const proj = this.getProjection();
       if (!proj) return;
-      const px = proj.fromLatLngToDivPixel(midpoint(secondLast, last));
+      const px = proj.fromLatLngToDivPixel(all[all.length - 1]);
       if (!px) return;
-      // Total distance across all segments
       let total = 0;
       for (let i = 1; i < all.length; i++) total += computeDistance(all[i - 1], all[i]);
-      let html = formatDistance(total);
-      if (SHOW_BEARING && all.length === 2) {
-        html += `<br><span style="font-size:10px;opacity:0.75">${computeBearing(all[0], all[1]).toFixed(0)}°</span>`;
-      }
-      this._div.innerHTML = html;
+      this._div.innerHTML = `Total: ${formatDistance(total)}`;
       const w = this._div.offsetWidth;
       const h = this._div.offsetHeight;
       this._div.style.left = `${px.x - w / 2}px`;
-      this._div.style.top  = `${px.y - h / 2 - 18}px`;
+      this._div.style.top  = `${px.y - h - 8}px`;
     };
 
     lo.onRemove = function () {
@@ -428,12 +466,15 @@
   // Add a waypoint dot and extend the polyline path.
   function addWaypoint(ll) {
     waypoints.push(ll);
-    // First dot is slightly larger (start marker)
-    const dot = createDotOverlay(ll, waypoints.length > 1);
-    dotOverlays.push(dot);
+    dotOverlays.push(createDotOverlay(ll, waypoints.length > 1));
     if (!polyline) createPolyline();
     polyline.setPath(waypoints);
     if (waypoints.length >= 2) {
+      // Permanent segment label for the newly completed segment
+      const a = waypoints[waypoints.length - 2];
+      const b = waypoints[waypoints.length - 1];
+      segLabelOverlays.push(createSegLabelOverlay(a, b));
+      // Total label (only renders when all.length >= 3 — see draw())
       if (!labelOverlay) labelOverlay = createLabelOverlay();
       labelOverlay.update(waypoints, null);
     }
@@ -443,7 +484,15 @@
   function updateRubberBand(cursorLL) {
     if (!polyline || waypoints.length === 0) return;
     polyline.setPath([...waypoints, cursorLL]);
-    if (waypoints.length >= 1) {
+    const from = waypoints[waypoints.length - 1];
+    // Live per-segment label for the rubber-band segment
+    if (!rubberSegLabel) {
+      rubberSegLabel = createSegLabelOverlay(from, cursorLL);
+    } else {
+      rubberSegLabel.update(from, cursorLL);
+    }
+    // Total label (covers 2+ committed waypoints + cursor)
+    if (waypoints.length >= 2) {
       if (!labelOverlay) labelOverlay = createLabelOverlay();
       labelOverlay.update(waypoints, cursorLL);
     }
@@ -454,6 +503,9 @@
     dotOverlays.forEach(d => d.setMap(null));
     dotOverlays = [];
     waypoints = [];
+    segLabelOverlays.forEach(l => l.setMap(null));
+    segLabelOverlays = [];
+    if (rubberSegLabel) { rubberSegLabel.setMap(null); rubberSegLabel = null; }
     if (labelOverlay) { labelOverlay.setMap(null); labelOverlay = null; }
     state = 'idle';
     pendingLatLng = null;
@@ -541,6 +593,7 @@
         // Finish without adding the double-click point a second time
         state = 'finished';
         polyline.setPath(waypoints);
+        if (rubberSegLabel) { rubberSegLabel.setMap(null); rubberSegLabel = null; }
         if (labelOverlay) labelOverlay.update(waypoints, null);
       } else {
         addWaypoint(ll);
@@ -654,6 +707,8 @@
     if (!polyline) return;
     polyline.setOptions(polylineOptions(settings.color, settings.lineStyle, settings.lineWeight));
     dotOverlays.forEach(d => d.updateColor(settings.color));
+    segLabelOverlays.forEach(l => l.updateColor());
+    if (rubberSegLabel) rubberSegLabel.updateColor();
     if (labelOverlay) labelOverlay.updateColor();
   }
 
