@@ -21,7 +21,7 @@ Right-click anywhere on the map to enable the tool, clear the active line mid-dr
 <table>
   <tr>
     <td><img src="screenshots/multi-segment-route.PNG" width="620"/></td>
-    <td><img src="screenshots/settings-flyout.png" width="240"/></td>
+    <td><img src="screenshots/settings-flyout.png" width="251"/></td>
   </tr>
   <tr>
     <td align="center">Multi-segment route measurement</td>
