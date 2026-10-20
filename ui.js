@@ -1,4 +1,4 @@
-/* fr24-measure/ui.js
+/* radar-ruler/ui.js
  * World: ISOLATED  |  run_at: document_idle
  * Owns: button injection, flyout UI, chrome.storage.sync settings.
  * Communicates with main.js (MAIN world) via window.postMessage.
@@ -8,7 +8,7 @@
 
 (function () {
 
-  const NS = 'fr24-measure';
+  const NS = 'radar-ruler';
 
   // ---------------------------------------------------------------------------
   // Default settings
@@ -29,15 +29,10 @@
   let mapCaptured = false;
 
   // ---------------------------------------------------------------------------
-  // Ruler SVG icon (inline, fill:currentColor)
+  // Ruler icon (PNG from extension package)
   // ---------------------------------------------------------------------------
 
-  const RULER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="size-6" aria-hidden="true">
-    <line x1="12" y1="2"  x2="12" y2="9"/>
-    <line x1="12" y1="15" x2="12" y2="22"/>
-    <line x1="2"  y1="12" x2="9"  y2="12"/>
-    <line x1="15" y1="12" x2="22" y2="12"/>
-  </svg>`;
+  const RULER_SVG = `<img src="${chrome.runtime.getURL('icons/button-icon.png')}" width="20" height="20" alt="Measure" aria-hidden="true" style="display:block;">`;
 
   // ---------------------------------------------------------------------------
   // Storage helpers — localStorage is synchronous, always available, and
@@ -101,7 +96,7 @@
 
   function buildButton() {
     const btn = document.createElement('button');
-    btn.id = 'fr24-measure-button';
+    btn.id = 'radar-ruler-button';
     btn.title = 'Measure distance';
     // DOM assumption: these Tailwind utility classes are used by #location-button.
     // If FR24 changes its button classes, update this className list.
@@ -126,7 +121,7 @@
   }
 
   function updateButtonState() {
-    const btn = document.getElementById('fr24-measure-button');
+    const btn = document.getElementById('radar-ruler-button');
     if (!btn) return;
     if (measuring) {
       btn.style.color = '#facc15'; // yellow-500
@@ -138,7 +133,7 @@
   }
 
   function injectButton() {
-    if (document.getElementById('fr24-measure-button')) return; // already present
+    if (document.getElementById('radar-ruler-button')) return; // already present
     const anchor = findAnchor();
     if (!anchor) return;
     const btn = buildButton();
@@ -361,7 +356,7 @@
   // ---------------------------------------------------------------------------
 
   const observer = new MutationObserver(() => {
-    if (!document.getElementById('fr24-measure-button')) {
+    if (!document.getElementById('radar-ruler-button')) {
       injectButton();
     }
   });

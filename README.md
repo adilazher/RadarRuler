@@ -1,117 +1,122 @@
-# FR24 Distance Measure — Chrome Extension
+# RadarRuler
 
-A Manifest V3 Chrome extension that adds a geodesic distance-measurement tool to [FlightRadar24](https://www.flightradar24.com/).
-
-## Installation (load unpacked)
-
-1. Open Chrome and navigate to `chrome://extensions`.
-2. Enable **Developer mode** (toggle, top-right).
-3. Click **Load unpacked** and select the `fr24-measure/` folder.
-4. Navigate to `https://www.flightradar24.com/`. A ruler button appears directly below the location button in the map controls (right side of the map).
-
-## Usage
-
-| Action | Effect |
-|--------|--------|
-| Click ruler button | Toggle measure mode on/off |
-| Click on map | Set start point (first click) or end point (second click) |
-| Move mouse (while drawing) | Live distance preview |
-| Third click (after finishing) | Start a new measurement, replacing the old one |
-| `Esc` | Cancel current measurement, keep measure mode on |
-| Toggle button off | Clear everything, exit measure mode |
-| Hover ruler button | Open settings flyout (colour + unit) |
-
-Settings (colour and unit) are synced via `chrome.storage.sync` and persist across reloads.
+Chrome extension that adds a geodesic distance and bearing measurement tool to [FlightRadar24](https://www.flightradar24.com/) - click to place waypoints, get per-segment distances, and measure multi-leg routes directly on the map.
 
 ---
 
-## Manual Test Checklist
+## Features
 
-Run through this after any change or after a FR24 update:
+**Multi-segment route measurement**
+Click to place waypoints and build up a multi-leg route across the map. Each segment is drawn as a geodesic line. Double-click to finish. A total distance label appears above the final waypoint.
 
-- [ ] **Button placement** — ruler button appears immediately below the location button (`#location-button`), same size and style.
-- [ ] **Flyout hover** — hovering the button opens the flyout to its left; hovering the flyout keeps it open; moving away closes it after ~200 ms.
-- [ ] **Live distance while moving** — after first click, mouse movement shows a live geodesic line and distance label updating in real time.
-- [ ] **Second click fixes the line** — clicking again locks the endpoint; line, markers, and label remain on the map.
-- [ ] **Pan/zoom after finishing** — pan and zoom; the line, markers, and label stay anchored to the correct geographic positions.
-- [ ] **Third click starts new measurement** — clicking anywhere after finishing clears the old measurement and sets a new start point.
-- [ ] **Esc cancels** — pressing Esc while drawing or after finishing clears the measurement but measure mode stays on.
-- [ ] **Toggle off clears everything** — clicking the button again removes line, markers, label, and restores the default cursor.
-- [ ] **Aircraft not selected while measuring** — clicking on an aircraft icon while measure mode is on should NOT open the aircraft sidebar; only the distance point should be placed.
-- [ ] **Settings persist after reload** — change colour/unit, reload the page, open FR24 again; settings should be restored.
-- [ ] **Colour change mid-measurement** — change the line colour while a measurement is visible; it should update immediately.
-- [ ] **Unit change mid-measurement** — switch unit; the label updates immediately with the new unit.
-- [ ] **NM default** — on first install (no stored settings) the unit should default to `nm`.
+**Per-segment distance and bearing labels**
+Every segment shows a label at its midpoint with the distance and magnetic bearing - for example `12.4 nm / 045°`. Labels stay anchored to their geographic position as you pan and zoom.
+
+**Configurable line appearance**
+Line colour, style (solid, dashed, dotted), and thickness are adjustable from the settings flyout. Six preset colours are available. Settings persist across page reloads.
+
+**Right-click controls**
+Right-click anywhere on the map to enable the tool, clear the active line mid-draw, or disable the tool when idle - without moving the mouse to the button.
+
+<table>
+  <tr>
+    <td><img src="screenshots/multi-segment-route.PNG" width="620"/></td>
+    <td><img src="screenshots/settings-flyout.png" width="240"/></td>
+  </tr>
+  <tr>
+    <td align="center">Multi-segment route measurement</td>
+    <td align="center">Settings flyout</td>
+  </tr>
+</table>
+
+---
+
+## Installation
+
+1. Download or clone this repository.
+2. Open Chrome and navigate to `chrome://extensions`.
+3. Enable **Developer mode** (toggle in the top-right corner).
+4. Click **Load unpacked** and select the `RadarRuler` folder.
+5. Navigate to `https://www.flightradar24.com/`.
+
+The measurement button appears in the map controls on the right side of the map, below the location button.
+
+---
+
+## Usage
+
+| Action | Result |
+|---|---|
+| Right-click on map | Enable the tool |
+| Click | Place a waypoint |
+| Double-click | Finish the current route |
+| Right-click while drawing | Clear the active line |
+| Right-click when idle | Disable the tool |
+| Hover the button | Open settings flyout |
+
+Changing any setting in the flyout automatically enables the tool.
+
+---
+
+## Settings
+
+| Setting | Options |
+|---|---|
+| Colour | Yellow, Red, Cyan, Green, White, Orange |
+| Unit | Nautical miles (nm), Kilometres (km), Miles (mi) |
+| Line style | Solid, Dashed, Dotted |
+| Line width | 1 to 8 (stepper) |
+
+---
+
+## Architecture
+
+| File | Content script world | Purpose |
+|---|---|---|
+| `main.js` | MAIN | Map capture, drawing logic, distance and bearing calculations |
+| `ui.js` | ISOLATED | Button injection, flyout UI, settings persistence |
+| `ui.css` | n/a | Flyout styles |
+
+The two content script worlds cannot share JavaScript objects directly. They communicate via `window.postMessage` with a `{ source: 'radar-ruler' }` namespace guard.
+
+The map instance is captured by wrapping `google.maps.Map.prototype` methods. Overlays (waypoint dots, segment labels, total label) are implemented as `google.maps.OverlayView` instances so they stay anchored to geographic coordinates across pan and zoom.
+
+---
+
+## Compatibility
+
+Tested against FlightRadar24 with Google Maps JS API v3.65. The extension relies on the following DOM and API assumptions:
+
+- The location button has `id="location-button"` and is used as the anchor for button injection.
+- The button uses Tailwind utility classes matching the surrounding FR24 controls.
+- `google.maps.geometry.spherical` is available (loaded by FR24).
+
+If FR24 updates its frontend and the button or map capture stops working, see the troubleshooting section below.
 
 ---
 
 ## Troubleshooting
 
-### Run the debug helper
+**Button not appearing**
 
-Open DevTools on `https://www.flightradar24.com/` (F12), switch to the **Console** tab, and type:
+Open DevTools on `https://www.flightradar24.com/` and check the Console for errors from `radar-ruler`. The MutationObserver in `ui.js` watches `document.body` for re-injection after SPA navigations. If FR24 has renamed the location button, update `findAnchor()` in `ui.js`.
 
-```js
-__fr24measure.debug()
-```
+**Map not detected**
 
-This logs:
-- Whether the map instance has been captured
-- Current zoom level and center
-- The map container DOM element
-- Whether `google.maps.geometry.spherical` is available
-- Whether the projection overlay is ready
-- Current measure state
+The extension captures the map by wrapping `google.maps.Map.prototype` methods. If the tool shows no response after clicking, pan or zoom the map once to trigger a wrapped method call. If the geometry library has not loaded yet, wait a few seconds and try again.
 
-### Map not captured ("Map not detected yet" toast)
+**Aircraft selection fires while measuring**
 
-The extension captures the map by wrapping `google.maps.Map.prototype` methods. If the toast appears:
-
-1. Call `__fr24measure.debug()` — if `map captured: false`, pan or zoom the map once; the wrapper fires on the next API call.
-2. If `google.maps.geometry.spherical available: false`, the geometry library hasn't loaded yet. Wait a few seconds and try again.
-3. If `projection ready: false` after the map is captured, the `OverlayView` hasn't been added yet — this resolves automatically within one render cycle.
-
-### Aircraft selection still fires while measuring
-
-> **Fragile assumption**: FR24 binds aircraft-click handlers either via `google.maps.event.addListener` or directly on the map container div. The extension suppresses them with a capture-phase `click` listener. If selection still triggers:
-
-- In `main.js`, find the comment `// This is the most fragile part` in `onClickCapture`.
-- Try changing the event from `'click'` to `'mousedown'` (update both `attachListeners` and `detachListeners`).
-- Alternatively, after a FR24 update, inspect the map container's event listeners in DevTools → Elements → Event Listeners to understand the new binding order.
-
-### Button not appearing (SPA navigation)
-
-> **DOM assumption**: `id="location-button"` is the anchor element; the ruler button is inserted as its next sibling.
-
-If the button doesn't appear:
-1. Open DevTools Console and check for errors from `fr24-measure`.
-2. Inspect the map controls area and look for the actual location button's id. If FR24 renamed it, update `findAnchor()` in `ui.js`.
-3. The `MutationObserver` in `ui.js` watches `document.body` subtree for re-injection on SPA navigations. If it fires too eagerly (performance), narrow the `observe` target to the controls container once its selector is known.
-
-### Classes/styles don't match
-
-> **DOM assumption**: the button uses the Tailwind classes listed in `buildButton()` in `ui.js`.
-
-If the button looks different from the location button, inspect `#location-button` in DevTools and copy its current `class` attribute into `buildButton()`.
-
-### Distance label misplaced after zoom/pan
-
-The label uses `google.maps.OverlayView` and `fromLatLngToDivPixel`, which recomputes on every `draw()` call (triggered by the Maps API on viewport changes). If the label drifts:
-- Check that `labelOverlay.setMap(capturedMap)` is called on the same map instance as `polyline`.
-- Verify `floatPane` is still the correct pane name — it is the standard pane for floating UI elements above tiles.
-
-### Ruler icon missing
-
-The ruler is an inline SVG in `ui.js` (`RULER_SVG` constant). If it doesn't render, check for CSP errors in the DevTools Console. FR24's CSP policy may block inline SVGs injected via `innerHTML` — in that case, switch to creating the SVG element programmatically with `document.createElementNS`.
+The extension intercepts clicks via a capture-phase listener. If FR24 updates its event binding order and aircraft selection starts firing through, change the event from `click` to `mousedown` in both `attachListeners` and `detachListeners` in `main.js`.
 
 ---
 
-## Architecture Notes
+## License
 
-| File | World | Purpose |
-|------|-------|---------|
-| `main.js` | `MAIN` | Map capture, drawing, measurement logic |
-| `ui.js` | `ISOLATED` | Button, flyout, `chrome.storage.sync` |
-| `ui.css` | — | Flyout styles (prefixed `fr24m-`) |
+MIT
 
-The two worlds cannot share JS objects, so they communicate via `window.postMessage` with `{ source: 'fr24-measure', type: ... }`. Always verify `event.source === window` and the namespace on receive to avoid responding to unrelated messages.
+## Attribution
+
+Extension icon by [bukeicon](https://www.magnific.com/icon/ruler_3171707) via [Magnific](https://www.magnific.com)
+
+Button icon by [André Luiz Gollo](https://www.magnific.com/icon/size_13549420) via [Magnific](https://www.magnific.com)

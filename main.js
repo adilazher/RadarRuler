@@ -1,4 +1,4 @@
-/* fr24-measure/main.js
+/* radar-ruler/main.js
  * World: MAIN  |  run_at: document_start
  * Owns all Google Maps interaction: capture, drawing, measurement.
  * Communicates with ui.js (ISOLATED world) via window.postMessage.
@@ -9,14 +9,14 @@
 (function () {
 
   // Prevent re-initialization on SPA navigations: if this script has already
-  // run in this page context, window.__fr24measure exists — bail out immediately.
-  if (window.__fr24measure) return;
+  // run in this page context, window.__radarRuler exists — bail out immediately.
+  if (window.__radarRuler) return;
 
   // ---------------------------------------------------------------------------
   // Constants / config
   // ---------------------------------------------------------------------------
 
-  const NS = 'fr24-measure';
+  const NS = 'radar-ruler';
   const SHOW_BEARING = false;          // secondary bearing line in label
   const CLICK_MOVE_THRESHOLD = 5;      // px — below this = click, else pan
   const CAPTURE_POLL_MS = 50;
@@ -185,7 +185,7 @@
     try {
       if (!isMainMap(mapInstance)) return;
       capturedMap = mapInstance;
-      console.log('[fr24-measure] map captured');
+      console.log('[radar-ruler] map captured');
       // Attach the right-click toggle listener once for the lifetime of this map instance.
       boundContextMenu = onContextMenu.bind(null);
       capturedMap.getDiv().addEventListener('contextmenu', boundContextMenu, { capture: true });
@@ -233,7 +233,7 @@
       google.maps.Map = WrappedMap;
     } catch (e) {
       // Non-fatal: prototype wrapping alone is sufficient
-      console.warn('[fr24-measure] constructor wrap failed:', e);
+      console.warn('[radar-ruler] constructor wrap failed:', e);
     }
   }
 
@@ -754,10 +754,10 @@
   // Debug API
   // ---------------------------------------------------------------------------
 
-  window.__fr24measure = {
+  window.__radarRuler = {
     getMap() { return capturedMap; },
     debug() {
-      console.group('[fr24-measure] debug');
+      console.group('[radar-ruler] debug');
       console.log('map captured:', !!capturedMap);
       if (capturedMap) {
         try { console.log('zoom:', capturedMap.getZoom()); } catch (e) { console.log('zoom error', e); }
