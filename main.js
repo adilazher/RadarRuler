@@ -34,7 +34,10 @@
   let overlay = null;          // OverlayView used for pixel↔LatLng
   let projectionReady = false;
 
-  let settings = { color: '#facc15', unit: 'nm' };
+  let settings = { color: '#facc15', unit: 'nm', labelSize: 2 };
+
+  const LABEL_SIZE_MAP = { 1: { fs: '10px', pad: '2px 5px' }, 2: { fs: '12px', pad: '3px 7px' }, 3: { fs: '15px', pad: '4px 10px' } };
+  const SEG_LABEL_SIZE_MAP = { 1: { fs: '9px', pad: '1px 4px' }, 2: { fs: '11px', pad: '2px 6px' }, 3: { fs: '14px', pad: '3px 8px' } };
 
   let measureOn = false;
   let prevCursorOptions = null; // { draggableCursor, draggingCursor }
@@ -383,9 +386,10 @@
 
     lo.onAdd = function () {
       const div = document.createElement('div');
+      const s = SEG_LABEL_SIZE_MAP[settings.labelSize] || SEG_LABEL_SIZE_MAP[2];
       div.style.cssText =
         'position:absolute;background:rgba(17,24,39,0.75);color:rgba(255,255,255,0.9);' +
-        'font-size:11px;font-family:sans-serif;padding:2px 6px;' +
+        `font-size:${s.fs};font-family:sans-serif;padding:${s.pad};` +
         'border-radius:5px;pointer-events:none;white-space:nowrap;' +
         'box-shadow:0 1px 3px rgba(0,0,0,0.4);line-height:1.4;';
       this._div = div;
@@ -411,6 +415,13 @@
 
     lo.update = function (a, b) { this._a = a; this._b = b; this.draw(); };
     lo.updateColor = function () { this.draw(); };
+    lo.updateSize = function () {
+      if (!this._div) return;
+      const s = SEG_LABEL_SIZE_MAP[settings.labelSize] || SEG_LABEL_SIZE_MAP[2];
+      this._div.style.fontSize = s.fs;
+      this._div.style.padding  = s.pad;
+      this.draw();
+    };
 
     lo.setMap(capturedMap);
     return lo;
@@ -428,9 +439,10 @@
 
     lo.onAdd = function () {
       const div = document.createElement('div');
+      const s = LABEL_SIZE_MAP[settings.labelSize] || LABEL_SIZE_MAP[2];
       div.style.cssText =
         'position:absolute;background:rgba(17,24,39,0.90);color:#fff;' +
-        'font-size:12px;font-family:sans-serif;padding:3px 8px;' +
+        `font-size:${s.fs};font-family:sans-serif;padding:${s.pad};` +
         'border-radius:6px;pointer-events:none;white-space:nowrap;' +
         'box-shadow:0 1px 4px rgba(0,0,0,0.5);line-height:1.4;';
       this._div = div;
@@ -467,6 +479,13 @@
     };
 
     lo.updateColor = function () { this.draw(); };
+    lo.updateSize = function () {
+      if (!this._div) return;
+      const s = LABEL_SIZE_MAP[settings.labelSize] || LABEL_SIZE_MAP[2];
+      this._div.style.fontSize = s.fs;
+      this._div.style.padding  = s.pad;
+      this.draw();
+    };
 
     lo.setMap(capturedMap);
     return lo;
@@ -717,9 +736,9 @@
     if (!polyline) return;
     polyline.setOptions(polylineOptions(settings.color, settings.lineStyle, settings.lineWeight));
     dotOverlays.forEach(d => d.updateColor(settings.color));
-    segLabelOverlays.forEach(l => l.updateColor());
-    if (rubberSegLabel) rubberSegLabel.updateColor();
-    if (labelOverlay) labelOverlay.updateColor();
+    segLabelOverlays.forEach(l => { l.updateColor(); l.updateSize(); });
+    if (rubberSegLabel) { rubberSegLabel.updateColor(); rubberSegLabel.updateSize(); }
+    if (labelOverlay) { labelOverlay.updateColor(); labelOverlay.updateSize(); }
   }
 
   // ---------------------------------------------------------------------------

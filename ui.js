@@ -14,7 +14,7 @@
   // Default settings
   // ---------------------------------------------------------------------------
 
-  const DEFAULTS = { color: '#facc15', unit: 'nm', lineStyle: 'solid', lineWeight: 3 };
+  const DEFAULTS = { color: '#facc15', unit: 'nm', lineStyle: 'solid', lineWeight: 3, labelSize: 2 };
   const SWATCHES = [
     { color: '#facc15', label: 'Yellow' },
     { color: '#ef4444', label: 'Red'    },
@@ -48,7 +48,8 @@
       color:      stored.color      ?? DEFAULTS.color,
       unit:       stored.unit       ?? DEFAULTS.unit,
       lineStyle:  stored.lineStyle  ?? DEFAULTS.lineStyle,
-      lineWeight: stored.lineWeight ?? DEFAULTS.lineWeight
+      lineWeight: stored.lineWeight ?? DEFAULTS.lineWeight,
+      labelSize:  stored.labelSize  ?? DEFAULTS.labelSize
     };
     cb(currentSettings);
   }
@@ -253,6 +254,48 @@
     thickRow.appendChild(thickVal);
     thickRow.appendChild(btnPlus);
 
+    // Label size row — stepper control (1 = small, 2 = medium, 3 = large)
+    const labelSizeRow = document.createElement('div');
+    labelSizeRow.className = 'fr24m-row fr24m-thick-row';
+
+    const labelSizeLabel = document.createElement('span');
+    labelSizeLabel.className = 'fr24m-thick-label';
+    labelSizeLabel.textContent = 'Labels';
+
+    const btnLabelMinus = document.createElement('button');
+    btnLabelMinus.className = 'fr24m-step-btn';
+    btnLabelMinus.textContent = '−';
+    btnLabelMinus.setAttribute('aria-label', 'Decrease label size');
+
+    const labelSizeVal = document.createElement('span');
+    labelSizeVal.id = 'fr24m-label-size-val';
+    labelSizeVal.className = 'fr24m-thick-val';
+    labelSizeVal.textContent = String(currentSettings.labelSize);
+
+    const btnLabelPlus = document.createElement('button');
+    btnLabelPlus.className = 'fr24m-step-btn';
+    btnLabelPlus.textContent = '+';
+    btnLabelPlus.setAttribute('aria-label', 'Increase label size');
+
+    function updateLabelSize(delta) {
+      const next = Math.min(3, Math.max(1, currentSettings.labelSize + delta));
+      if (next === currentSettings.labelSize) return;
+      labelSizeVal.textContent = String(next);
+      btnLabelMinus.disabled = next <= 1;
+      btnLabelPlus.disabled  = next >= 3;
+      saveSettings({ labelSize: next });
+    }
+
+    btnLabelMinus.addEventListener('click', () => updateLabelSize(-1));
+    btnLabelPlus.addEventListener('click',  () => updateLabelSize(+1));
+    btnLabelMinus.disabled = currentSettings.labelSize <= 1;
+    btnLabelPlus.disabled  = currentSettings.labelSize >= 3;
+
+    labelSizeRow.appendChild(labelSizeLabel);
+    labelSizeRow.appendChild(btnLabelMinus);
+    labelSizeRow.appendChild(labelSizeVal);
+    labelSizeRow.appendChild(btnLabelPlus);
+
     // Divider
     const divider = document.createElement('div');
     divider.className = 'fr24m-divider';
@@ -275,6 +318,7 @@
     flyout.appendChild(unitRow);
     flyout.appendChild(styleRow);
     flyout.appendChild(thickRow);
+    flyout.appendChild(labelSizeRow);
     flyout.appendChild(divider);
     flyout.appendChild(help);
     return flyout;
@@ -343,12 +387,30 @@
     });
 
     // Sync thickness stepper
-    const val = flyoutEl.querySelector('#fr24m-weight-val');
-    if (val) val.textContent = String(currentSettings.lineWeight);
-    flyoutEl.querySelectorAll('.fr24m-step-btn').forEach((btn) => {
-      if (btn.textContent === '−') btn.disabled = currentSettings.lineWeight <= 1;
-      if (btn.textContent === '+') btn.disabled = currentSettings.lineWeight >= 8;
-    });
+    const weightVal = flyoutEl.querySelector('#fr24m-weight-val');
+    if (weightVal) {
+      weightVal.textContent = String(currentSettings.lineWeight);
+      const row = weightVal.closest('.fr24m-thick-row');
+      if (row) {
+        row.querySelectorAll('.fr24m-step-btn').forEach((btn) => {
+          if (btn.getAttribute('aria-label') === 'Decrease width') btn.disabled = currentSettings.lineWeight <= 1;
+          if (btn.getAttribute('aria-label') === 'Increase width') btn.disabled = currentSettings.lineWeight >= 8;
+        });
+      }
+    }
+
+    // Sync label size stepper
+    const labelSizeVal = flyoutEl.querySelector('#fr24m-label-size-val');
+    if (labelSizeVal) {
+      labelSizeVal.textContent = String(currentSettings.labelSize);
+      const row = labelSizeVal.closest('.fr24m-thick-row');
+      if (row) {
+        row.querySelectorAll('.fr24m-step-btn').forEach((btn) => {
+          if (btn.getAttribute('aria-label') === 'Decrease label size') btn.disabled = currentSettings.labelSize <= 1;
+          if (btn.getAttribute('aria-label') === 'Increase label size') btn.disabled = currentSettings.labelSize >= 3;
+        });
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
