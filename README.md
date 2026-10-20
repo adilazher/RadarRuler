@@ -13,7 +13,7 @@ Click to place waypoints and build up a multi-leg route across the map. Each seg
 Every segment shows a label at its midpoint with the distance and magnetic bearing - for example `12.4 nm / 045°`. Labels stay anchored to their geographic position as you pan and zoom.
 
 **Configurable line appearance**
-Line colour, style (solid, dashed, dotted), and thickness are adjustable from the settings flyout. Six preset colours are available. Settings persist across page reloads.
+Line colour, style (solid, dashed, dotted), thickness, and label size are adjustable from the settings flyout. Six preset colours are available. Settings persist across page reloads.
 
 **Right-click controls**
 Right-click anywhere on the map to enable the tool, clear the active line mid-draw, or disable the tool when idle - without moving the mouse to the button.
@@ -21,7 +21,7 @@ Right-click anywhere on the map to enable the tool, clear the active line mid-dr
 <table>
   <tr>
     <td><img src="screenshots/multi-segment-route.PNG" width="620"/></td>
-    <td><img src="screenshots/settings-flyout.png" width="251"/></td>
+    <td><img src="screenshots/settings-flyout.png" width="257"/></td>
   </tr>
   <tr>
     <td align="center">Multi-segment route measurement</td>
@@ -66,6 +66,7 @@ Changing any setting in the flyout automatically enables the tool.
 | Unit | Nautical miles (nm), Kilometres (km), Miles (mi) |
 | Line style | Solid, Dashed, Dotted |
 | Line width | 1 to 8 (stepper) |
+| Label size | 1 to 3 (stepper) |
 
 ---
 
