@@ -32,7 +32,9 @@
   // Ruler icon (PNG from extension package)
   // ---------------------------------------------------------------------------
 
-  const RULER_SVG = `<img src="${chrome.runtime.getURL('icons/button-icon.png')}" width="20" height="20" alt="Measure" aria-hidden="true" style="display:block;">`;
+  const RULER_ICON_DEFAULT = chrome.runtime.getURL('icons/button-icon.png');
+  const RULER_ICON_ACTIVE  = chrome.runtime.getURL('icons/button-icon-active.png');
+  const RULER_SVG = `<img id="radar-ruler-icon" src="${RULER_ICON_DEFAULT}" width="20" height="20" alt="Measure" aria-hidden="true" style="display:block;">`;
 
   // ---------------------------------------------------------------------------
   // Storage helpers — localStorage is synchronous, always available, and
@@ -124,13 +126,9 @@
   function updateButtonState() {
     const btn = document.getElementById('radar-ruler-button');
     if (!btn) return;
-    if (measuring) {
-      btn.style.color = '#facc15'; // yellow-500
-      btn.setAttribute('aria-pressed', 'true');
-    } else {
-      btn.style.color = '';
-      btn.setAttribute('aria-pressed', 'false');
-    }
+    btn.setAttribute('aria-pressed', measuring ? 'true' : 'false');
+    const icon = document.getElementById('radar-ruler-icon');
+    if (icon) icon.src = measuring ? RULER_ICON_ACTIVE : RULER_ICON_DEFAULT;
   }
 
   function injectButton() {

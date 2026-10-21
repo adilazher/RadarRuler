@@ -120,4 +120,4 @@ MIT
 
 Extension icon by [bukeicon](https://www.magnific.com/icon/ruler_3171707) via [Magnific](https://www.magnific.com)
 
-Button icon by [André Luiz Gollo](https://www.magnific.com/icon/size_13549420) via [Magnific](https://www.magnific.com)
+Button icon by [kmg design](https://www.magnific.com/icon/bow_2530471) via [Magnific](https://www.magnific.com)
