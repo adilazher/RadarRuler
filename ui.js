@@ -302,10 +302,11 @@
     const help = document.createElement('ul');
     help.className = 'fr24m-help';
     [
-      ['Right-click', 'enable / disable'],
-      ['Click',       'place waypoint'],
-      ['Dbl-click',   'finish segment'],
-      ['Right-click', 'clear line (while drawing)'],
+      ['Right-click',       'enable / disable'],
+      ['Click',             'place waypoint'],
+      ['Dbl-click',         'finish route'],
+      ['Mid-click / ⌫',    'undo last waypoint'],
+      ['Esc / Right-click', 'clear line'],
     ].forEach(([key, desc]) => {
       const li = document.createElement('li');
       li.innerHTML = `<span class="fr24m-help-key">${key}</span>${desc}`;

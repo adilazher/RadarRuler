@@ -544,7 +544,27 @@
   // Event handlers
   // ---------------------------------------------------------------------------
 
+  function undoLastWaypoint() {
+    if (waypoints.length <= 1) { clearMeasurement(); return; }
+    waypoints.pop();
+    const dot = dotOverlays.pop();
+    if (dot) dot.setMap(null);
+    const seg = segLabelOverlays.pop();
+    if (seg) seg.setMap(null);
+    if (rubberSegLabel) { rubberSegLabel.setMap(null); rubberSegLabel = null; }
+    polyline.setPath(waypoints);
+    if (labelOverlay) labelOverlay.update(waypoints, null);
+  }
+
   function onPointerDown(e) {
+    if (e.button === 1) {
+      e.preventDefault(); // suppress Chrome auto-scroll cursor
+      if (measureOn && state === 'drawing') {
+        e.stopImmediatePropagation();
+        undoLastWaypoint();
+      }
+      return;
+    }
     pointerDownX = e.clientX;
     pointerDownY = e.clientY;
     pointerMoved = false;
@@ -630,9 +650,12 @@
   }
 
   function onKeyDown(e) {
-    if (e.key === 'Escape' && measureOn) {
+    if (!measureOn) return;
+    if (e.key === 'Escape') {
       clearMeasurement();
-      // Keep measure mode on after Esc — user can continue measuring
+    } else if (e.key === 'Backspace' && state === 'drawing') {
+      e.preventDefault();
+      undoLastWaypoint();
     }
   }
 
@@ -662,24 +685,24 @@
     boundClick        = onClickCapture.bind(null);
     boundKeyDown      = onKeyDown.bind(null);
 
-    div.addEventListener('pointerdown',   boundPointerDown,  { capture: false });
+    div.addEventListener('pointerdown',   boundPointerDown,  { capture: true  });
     div.addEventListener('pointermove',   boundPointerMove,  { capture: false });
     div.addEventListener('pointerup',     boundPointerUp,    { capture: false });
     div.addEventListener('mousemove',     boundMouseMove,    { capture: false });
     // capture: true so we intercept before Google Maps / FR24 handlers
     div.addEventListener('click',         boundClick,        { capture: true  });
-    document.addEventListener('keydown',  boundKeyDown,      { capture: false });
+    document.addEventListener('keydown',  boundKeyDown,      { capture: true  });
   }
 
   function detachListeners() {
     if (!capturedMap) return;
     const div = capturedMap.getDiv();
-    if (boundPointerDown) div.removeEventListener('pointerdown', boundPointerDown, { capture: false });
-    if (boundPointerMove) div.removeEventListener('pointermove', boundPointerMove, { capture: false });
-    if (boundPointerUp)   div.removeEventListener('pointerup',   boundPointerUp,   { capture: false });
-    if (boundMouseMove)   div.removeEventListener('mousemove',   boundMouseMove,   { capture: false });
-    if (boundClick)       div.removeEventListener('click',       boundClick,       { capture: true  });
-    if (boundKeyDown)     document.removeEventListener('keydown', boundKeyDown,    { capture: false });
+    if (boundPointerDown)  div.removeEventListener('pointerdown', boundPointerDown,  { capture: true  });
+    if (boundPointerMove)  div.removeEventListener('pointermove', boundPointerMove,  { capture: false });
+    if (boundPointerUp)    div.removeEventListener('pointerup',   boundPointerUp,    { capture: false });
+    if (boundMouseMove)    div.removeEventListener('mousemove',   boundMouseMove,    { capture: false });
+    if (boundClick)        div.removeEventListener('click',       boundClick,        { capture: true  });
+    if (boundKeyDown)      document.removeEventListener('keydown', boundKeyDown,     { capture: true  });
     boundPointerDown = boundPointerMove = boundPointerUp =
       boundMouseMove = boundClick = boundKeyDown = null;
   }

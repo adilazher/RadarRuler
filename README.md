@@ -50,6 +50,8 @@ The measurement button appears in the map controls on the right side of the map,
 | Right-click on map | Enable the tool |
 | Click | Place a waypoint |
 | Double-click | Finish the current route |
+| Middle-click / Backspace | Undo last waypoint |
+| Esc | Clear the active line |
 | Right-click while drawing | Clear the active line |
 | Right-click when idle | Disable the tool |
 | Hover the button | Open settings flyout |
